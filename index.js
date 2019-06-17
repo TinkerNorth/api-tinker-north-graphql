@@ -31,11 +31,17 @@ const typeDefs = gql`
     thumbnail: Thumbnail
   }
 
+  type Hyperlink {
+    uri: String
+  }
+
   type Content {
     node_type: String
     content: [Content]
     value: String
     marks: [Mark]
+    image: Thumbnail
+    hyperlink: Hyperlink
   }
 
   type Mark {
@@ -46,12 +52,13 @@ const typeDefs = gql`
     id: ID
     node_type: String
     content: [Content]
+    image: Thumbnail
     content_type: String
   }
 
   type Query {
     AggregationPages(id: ID): AggregationPage
-    Article: Article
+    Article(id: ID): Article
   }
 `;
 
@@ -88,6 +95,22 @@ function convert_content (content_elements) {
       node_type: content_element.nodeType
     };
 
+    
+    if (content_element.nodeType === 'blogArticleImage'){
+      results.image = convert_thumbnail(content_element.fields.image);
+    }
+    
+    if (content_element.data && content_element.nodeType === 'hyperlink'){
+      results.hyperlink = {
+        uri: content_element.data.uri
+      };
+    }
+    
+    if (content_element.data && content_element.nodeType === 'embedded-asset-block'){
+      results.image = convert_thumbnail(content_element.data.target);
+    }
+    
+    
     if (content_element.value){
       results.value = content_element.value;
     }
@@ -98,18 +121,27 @@ function convert_content (content_elements) {
     if (content_element.content){
       results.content = convert_content(content_element.content);
     }
+    
     return results;
   });
 }
 
 function convert_body (body_elements) {
+  
   return body_elements.map(function(body_element) {
-    return {
+    var results = {
       id: body_element.sys.id,
-      content: convert_content(body_element.fields.richParagraph.content),
       node_type: body_element.nodeType,
       content_type: body_element.sys.contentType.sys.id
     };
+    if (body_element.fields.richParagraph) {
+      results.content = convert_content(body_element.fields.richParagraph.content)
+    }
+
+    if (body_element.fields.image) {
+      results.image = convert_thumbnail(body_element.fields.image)
+    }
+    return results;
   });
 }
 
@@ -120,6 +152,7 @@ function convert_entries_to_aggregation_pages (entries) {
     blogs: convert_blogs(entries.fields.blogs)
   }
 }
+
 
 function convert_entries_to_articles (entries) {
   return {
@@ -140,7 +173,7 @@ const resolvers = {
       })
     },
     Article: (parent, args, context) => {
-      return context.contentful.getEntry("47n1sYzPqUOmyGAKaaAUEM").then(entries => {
+      return context.contentful.getEntry(args.id).then(entries => {
         return convert_entries_to_articles(entries);
       })
     }
